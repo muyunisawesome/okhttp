@@ -1,4 +1,4 @@
-OkHttp
+OkHttp 从4.x版本后从java语言转kotlin编程
 ======
 
 See the [project website][okhttp] for documentation and APIs.
