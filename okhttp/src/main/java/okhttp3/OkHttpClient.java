@@ -194,7 +194,7 @@ public class OkHttpClient implements Cloneable, Call.Factory, WebSocket.Factory 
     };
   }
 
-  final Dispatcher dispatcher;
+  final Dispatcher dispatcher; //派发器
   final @Nullable Proxy proxy;
   final List<Protocol> protocols;
   final List<ConnectionSpec> connectionSpecs;
@@ -400,6 +400,7 @@ public class OkHttpClient implements Cloneable, Call.Factory, WebSocket.Factory 
   }
 
   /**
+   * 返回观察每个call的完整跨度的 不可变拦截器列表: 从连接建立前直到响应资源被选为止
    * Returns an immutable list of interceptors that observe the full span of each call: from before
    * the connection is established (if any) until after the response source is selected (either the
    * origin server, cache, or both).
@@ -409,6 +410,8 @@ public class OkHttpClient implements Cloneable, Call.Factory, WebSocket.Factory 
   }
 
   /**
+   * 返回观察单个网络请求和响应的不可变拦截器列表。这些拦截器必须只精确调用{@link Interceptor.Chain#proceed}一次。
+   * 短路 或者 重复网络请求时错的。<P></P>
    * Returns an immutable list of interceptors that observe a single network request and response.
    * These interceptors must call {@link Interceptor.Chain#proceed} exactly once: it is an error for
    * a network interceptor to short-circuit or repeat a network request.
@@ -422,6 +425,7 @@ public class OkHttpClient implements Cloneable, Call.Factory, WebSocket.Factory 
   }
 
   /**
+   * 准备一个要执行的请求在未来的某个时间点<br>
    * Prepares the {@code request} to be executed at some point in the future.
    */
   @Override public Call newCall(Request request) {
@@ -429,6 +433,7 @@ public class OkHttpClient implements Cloneable, Call.Factory, WebSocket.Factory 
   }
 
   /**
+   * 使用请求来连接一个新的web socket<P></P>
    * Uses {@code request} to connect a new web socket.
    */
   @Override public WebSocket newWebSocket(Request request, WebSocketListener listener) {
@@ -471,8 +476,8 @@ public class OkHttpClient implements Cloneable, Call.Factory, WebSocket.Factory 
     int pingInterval;
 
     public Builder() {
-      dispatcher = new Dispatcher();
-      protocols = DEFAULT_PROTOCOLS;
+      dispatcher = new Dispatcher(); //创建一个派发器
+      protocols = DEFAULT_PROTOCOLS; // 支持的协议，默认http1.0、http2.0
       connectionSpecs = DEFAULT_CONNECTION_SPECS;
       eventListenerFactory = EventListener.factory(EventListener.NONE);
       proxySelector = ProxySelector.getDefault();
@@ -482,12 +487,12 @@ public class OkHttpClient implements Cloneable, Call.Factory, WebSocket.Factory 
       certificatePinner = CertificatePinner.DEFAULT;
       proxyAuthenticator = Authenticator.NONE;
       authenticator = Authenticator.NONE;
-      connectionPool = new ConnectionPool();
+      connectionPool = new ConnectionPool();//连接池
       dns = Dns.SYSTEM;
       followSslRedirects = true;
       followRedirects = true;
       retryOnConnectionFailure = true;
-      connectTimeout = 10_000;
+      connectTimeout = 10_000; //超时时间
       readTimeout = 10_000;
       writeTimeout = 10_000;
       pingInterval = 0;

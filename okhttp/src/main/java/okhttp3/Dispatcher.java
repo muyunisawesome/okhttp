@@ -30,6 +30,10 @@ import okhttp3.RealCall.AsyncCall;
 import okhttp3.internal.Util;
 
 /**
+ * 政策：什么时候异步请求被执行。
+ * 每哥派发器内部的使用一个ExecutorService来运行调用。如果你提供了自己的executor，他应该能并发的执行
+ * getMaxRequests配置的最大数量的调用。<P></P>
+ *
  * Policy on when async requests are executed.
  *
  * <p>Each dispatcher uses an {@link ExecutorService} to run calls internally. If you supply your
@@ -37,20 +41,24 @@ import okhttp3.internal.Util;
  * of calls concurrently.
  */
 public final class Dispatcher {
-  private int maxRequests = 64;
-  private int maxRequestsPerHost = 5;
-  private @Nullable Runnable idleCallback;
+  private int maxRequests = 64; //总最大请求数
+  private int maxRequestsPerHost = 5; //每个请求的最大请求数
+  private @Nullable Runnable idleCallback; //空闲回调任务
 
   /** Executes calls. Created lazily. */
-  private @Nullable ExecutorService executorService;
+  private @Nullable ExecutorService executorService; //执行线程池，懒加载方式创建。
 
   /** Ready async calls in the order they'll be run. */
+  // 准备执行异步的调用，以他们将被执行的顺序。
+  // 一个新的异步请求首先会被加入该队列中
   private final Deque<AsyncCall> readyAsyncCalls = new ArrayDeque<>();
 
   /** Running asynchronous calls. Includes canceled calls that haven't finished yet. */
+  // 当前正在运行中的异步请求
   private final Deque<AsyncCall> runningAsyncCalls = new ArrayDeque<>();
 
   /** Running synchronous calls. Includes canceled calls that haven't finished yet. */
+  // 当前正在运行的同步请求
   private final Deque<RealCall> runningSyncCalls = new ArrayDeque<>();
 
   public Dispatcher(ExecutorService executorService) {
@@ -60,6 +68,7 @@ public final class Dispatcher {
   public Dispatcher() {
   }
 
+  /** 这个线程池没有核心线程，线程数量没有限制，空闲60s就会回收*/
   public synchronized ExecutorService executorService() {
     if (executorService == null) {
       executorService = new ThreadPoolExecutor(0, Integer.MAX_VALUE, 60, TimeUnit.SECONDS,
@@ -125,10 +134,14 @@ public final class Dispatcher {
   }
 
   synchronized void enqueue(AsyncCall call) {
+    //正在执行的任务数量小于最大值（64），并且此任务所属主机的正在执行任务小于最大值（5）
     if (runningAsyncCalls.size() < maxRequests && runningCallsForHost(call) < maxRequestsPerHost) {
+      //加入立刻执行队列
       runningAsyncCalls.add(call);
+      //投入线程池执行
       executorService().execute(call);
     } else {
+      //否则加入准备队列
       readyAsyncCalls.add(call);
     }
   }
@@ -150,11 +163,11 @@ public final class Dispatcher {
       call.cancel();
     }
   }
-
   private void promoteCalls() {
     if (runningAsyncCalls.size() >= maxRequests) return; // Already running max capacity.
     if (readyAsyncCalls.isEmpty()) return; // No ready calls to promote.
 
+    //若条件允许，将readyAsyncCalls中的任务移动到runningAsyncCalls中，并交给线程池执行
     for (Iterator<AsyncCall> i = readyAsyncCalls.iterator(); i.hasNext(); ) {
       AsyncCall call = i.next();
 
@@ -164,11 +177,13 @@ public final class Dispatcher {
         executorService().execute(call);
       }
 
+      //当runningAsyncCalls满了，直接退出迭代
       if (runningAsyncCalls.size() >= maxRequests) return; // Reached max capacity.
     }
   }
 
-  /** Returns the number of running calls that share a host with {@code call}. */
+  /** Returns the number of running calls that share a host with {@code call}. <br>
+   * 返回 那些用call共享一个主机的运行中call的数量 */
   private int runningCallsForHost(AsyncCall call) {
     int result = 0;
     for (AsyncCall c : runningAsyncCalls) {
@@ -177,7 +192,8 @@ public final class Dispatcher {
     return result;
   }
 
-  /** Used by {@code Call#execute} to signal it is in-flight. */
+  /** Used by {@code Call#execute} to signal it is in-flight.<br>
+   * {@code Call#execute}用来标记它在飞行中*/
   synchronized void executed(RealCall call) {
     runningSyncCalls.add(call);
   }
@@ -192,16 +208,20 @@ public final class Dispatcher {
     finished(runningSyncCalls, call, false);
   }
 
+  //泛型函数，同时接受 同步、异步Call
   private <T> void finished(Deque<T> calls, T call, boolean promoteCalls) {
     int runningCallsCount;
     Runnable idleCallback;
     synchronized (this) {
+      //从指定队列（即正在执行队列）中，移出此call
       if (!calls.remove(call)) throw new AssertionError("Call wasn't in-flight!");
+      //如果是异步，则推动下一个任务的执行。promote促进
       if (promoteCalls) promoteCalls();
+      //获取正在执行的任务数量 = 同步+异步的
       runningCallsCount = runningCallsCount();
       idleCallback = this.idleCallback;
     }
-
+    //如果没有正在执行的任务，且idleCallback不为null，则回调通知空闲了
     if (runningCallsCount == 0 && idleCallback != null) {
       idleCallback.run();
     }

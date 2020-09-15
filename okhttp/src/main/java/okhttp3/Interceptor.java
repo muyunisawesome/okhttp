@@ -33,6 +33,8 @@ public interface Interceptor {
     Response proceed(Request request) throws IOException;
 
     /**
+     * 返回请求将在其上执行的连接。只适用于网络拦截器的chains; 对于应用程序拦截器，这总是空的<p></p>
+     *
      * Returns the connection the request will be executed on. This is only available in the chains
      * of network interceptors; for application interceptors this is always null.
      */

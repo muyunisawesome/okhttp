@@ -21,7 +21,11 @@ import okhttp3.Response;
 import okhttp3.ResponseBody;
 import okio.Sink;
 
-/** Encodes HTTP requests and decodes HTTP responses. */
+/**
+ * 编码HTTP请求并解码HTTP响应<P></P>
+ *
+ * Encodes HTTP requests and decodes HTTP responses.
+ */
 public interface HttpCodec {
   /**
    * The timeout to use while discarding a stream of input data. Since this is used for connection
@@ -30,19 +34,23 @@ public interface HttpCodec {
    */
   int DISCARD_STREAM_TIMEOUT_MILLIS = 100;
 
-  /** Returns an output stream where the request body can be streamed. */
+  /** Returns an output stream where the request body can be streamed.
+   * 为发送请求而提供的，创建请求体 */
   Sink createRequestBody(Request request, long contentLength);
 
-  /** This should update the HTTP engine's sentRequestMillis field. */
+  /** This should update the HTTP engine's sentRequestMillis field.
+   * 为发送请求而提供的，写入请求头部*/
   void writeRequestHeaders(Request request) throws IOException;
 
-  /** Flush the request to the underlying socket. */
+  /** Flush the request to the underlying socket.
+   * 以用于发送请求体数据*/
   void flushRequest() throws IOException;
 
   /** Flush the request to the underlying socket and signal no more bytes will be transmitted. */
   void finishRequest() throws IOException;
 
   /**
+   * 读取响应头部
    * Parses bytes of a response header from an HTTP transport.
    *
    * @param expectContinue true to return null if this is an intermediate response with a "100"
@@ -50,7 +58,8 @@ public interface HttpCodec {
    */
   Response.Builder readResponseHeaders(boolean expectContinue) throws IOException;
 
-  /** Returns a stream that reads the response body. */
+  /** Returns a stream that reads the response body.
+   * 打开请求体,以用于后续获取请求体数据*/
   ResponseBody openResponseBody(Response response) throws IOException;
 
   /**

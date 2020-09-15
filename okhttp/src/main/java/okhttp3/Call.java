@@ -18,10 +18,12 @@ package okhttp3;
 import java.io.IOException;
 
 /**
+ * 一个call是一个已准备执行的请求。可以被取消，当这个对象表示单个的请求/响应对（流）时，不能被执行两次。<br>
  * A call is a request that has been prepared for execution. A call can be canceled. As this object
  * represents a single request/response pair (stream), it cannot be executed twice.
  */
 public interface Call extends Cloneable {
+
   /** Returns the original request that initiated this call. */
   Request request();
 
@@ -86,6 +88,7 @@ public interface Call extends Cloneable {
    */
   Call clone();
 
+  //创建call工厂
   interface Factory {
     Call newCall(Request request);
   }

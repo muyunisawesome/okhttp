@@ -122,6 +122,11 @@ public class Platform {
 
   public void connectSocket(Socket socket, InetSocketAddress address,
       int connectTimeout) throws IOException {
+    //此时进行了三次握手
+    /**
+     * 当客户端调用connect时，触发了连接请求，向服务器发送了SYN J包，这时connect进入阻塞状态；服务器监听到连接请求，即收到SYN J包，调用accept函 数接收请求向客户端发送SYN K ，ACK
+     * J+1，这时accept进入阻塞状态；客户端收到服务器的SYN K ，ACK J+1之后，这时connect返回，并对SYN K进行确认；服务器收到ACK K+1时，accept返回，至此三次握手完毕，连接建立
+     */
     socket.connect(address, connectTimeout);
   }
 

@@ -54,6 +54,10 @@ import static okhttp3.internal.http.StatusLine.HTTP_PERM_REDIRECT;
 import static okhttp3.internal.http.StatusLine.HTTP_TEMP_REDIRECT;
 
 /**
+ * 最外层的拦截器<br>
+ * 这个拦截器从失败中恢复 并且如果必要会跟随重定向。如果call被取消将会报IOException<br>
+ * 作用就是处理了一些连接异常以及重定向<P></P>
+ *
  * This interceptor recovers from failures and follows redirects as necessary. It may throw an
  * {@link IOException} if the call was canceled.
  */
@@ -107,14 +111,16 @@ public final class RetryAndFollowUpInterceptor implements Interceptor {
     RealInterceptorChain realChain = (RealInterceptorChain) chain;
     Call call = realChain.call();
     EventListener eventListener = realChain.eventListener();
-
+    //1. 构建一个StreamAllocation对象，StreamAllocation相当于是个管理类，维护了
+    //Connections、Streams和Calls之间的管理，该类初始化一个Socket连接对象，获取输入/输出流对象。
     streamAllocation = new StreamAllocation(client.connectionPool(), createAddress(request.url()),
         call, eventListener, callStackTrace);
-
+    //重定向次数
     int followUpCount = 0;
     Response priorResponse = null;
     while (true) {
       if (canceled) {
+        //如果已取消，删除连接上的call请求
         streamAllocation.release();
         throw new IOException("Canceled");
       }
@@ -122,29 +128,36 @@ public final class RetryAndFollowUpInterceptor implements Interceptor {
       Response response;
       boolean releaseConnection = true;
       try {
+        //2. 继续执行下一个Interceptor，即BridgeInterceptor
         response = realChain.proceed(request, streamAllocation, null, null);
         releaseConnection = false;
       } catch (RouteException e) {
+        // 抛出异常以指示通过单个路由连接的问题。
         // The attempt to connect via a route failed. The request will not have been sent.
         if (!recover(e.getLastConnectException(), false, request)) {
+          //不能恢复，抛出异常
           throw e.getLastConnectException();
         }
-        releaseConnection = false;
+        releaseConnection = false; //否则能恢复，不释放资源
         continue;
       } catch (IOException e) {
+        // 尝试与服务器通信失败。 该请求可能已发送
         // An attempt to communicate with a server failed. The request may have been sent.
         boolean requestSendStarted = !(e instanceof ConnectionShutdownException);
+        //不能恢复，抛出异常
         if (!recover(e, requestSendStarted, request)) throw e;
-        releaseConnection = false;
+        releaseConnection = false; //否则能恢复，不释放资源
         continue;
       } finally {
         // We're throwing an unchecked exception. Release any resources.
+        // 检测到其他未知异常，则释放连接和资源
         if (releaseConnection) {
           streamAllocation.streamFailed(null);
           streamAllocation.release();
         }
       }
 
+      //构建响应体，这个响应体的body为空。
       // Attach the prior response if it exists. Such responses never have a body.
       if (priorResponse != null) {
         response = response.newBuilder()
@@ -153,7 +166,7 @@ public final class RetryAndFollowUpInterceptor implements Interceptor {
                     .build())
             .build();
       }
-
+      // 根据响应码处理请求，返回Request不为空时则进行重定向处理
       Request followUp = followUpRequest(response);
 
       if (followUp == null) {
@@ -165,6 +178,7 @@ public final class RetryAndFollowUpInterceptor implements Interceptor {
 
       closeQuietly(response.body());
 
+      //重定向的次数不能超过20次
       if (++followUpCount > MAX_FOLLOW_UPS) {
         streamAllocation.release();
         throw new ProtocolException("Too many follow-up requests: " + followUpCount);
@@ -205,6 +219,7 @@ public final class RetryAndFollowUpInterceptor implements Interceptor {
   }
 
   /**
+   * 判断能否恢复
    * Report and attempt to recover from a failure to communicate with a server. Returns true if
    * {@code e} is recoverable, or false if the failure is permanent. Requests with a body can only
    * be recovered if the body is buffered or if the failure occurred before the request has been

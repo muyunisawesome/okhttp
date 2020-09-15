@@ -182,23 +182,24 @@ public final class CacheStrategy {
 
     /** Returns a strategy to use assuming the request can use the network. */
     private CacheStrategy getCandidate() {
+      //1. 如果缓存没有命中，就直接进行网络请求。
       // No cached response.
       if (cacheResponse == null) {
         return new CacheStrategy(request, null);
       }
-
+      //2. 如果TLS握手信息丢失，则返回直接进行连接。
       // Drop the cached response if it's missing a required handshake.
       if (request.isHttps() && cacheResponse.handshake() == null) {
         return new CacheStrategy(request, null);
       }
-
+      //3. 根据response状态码，Expired时间和是否有no-cache标签就行判断是否进行直接访问。
       // If this response shouldn't have been stored, it should never be used
       // as a response source. This check should be redundant as long as the
       // persistence store is well-behaved and the rules are constant.
       if (!isCacheable(cacheResponse, request)) {
         return new CacheStrategy(request, null);
       }
-
+      //4. 如果请求header里有"no-cache"或者右条件GET请求（header里带有ETag/Since标签），则直接连接。
       CacheControl requestCaching = request.cacheControl();
       if (requestCaching.noCache() || hasConditions(request)) {
         return new CacheStrategy(request, null);
@@ -208,16 +209,19 @@ public final class CacheStrategy {
       if (responseCaching.immutable()) {
         return new CacheStrategy(null, cacheResponse);
       }
-
+      //计算当前age的时间戳：now - sent + age
       long ageMillis = cacheResponseAge();
+      //刷新时间，一般服务器设置为max-age
       long freshMillis = computeFreshnessLifetime();
 
       if (requestCaching.maxAgeSeconds() != -1) {
+        //一般取max-age
         freshMillis = Math.min(freshMillis, SECONDS.toMillis(requestCaching.maxAgeSeconds()));
       }
 
       long minFreshMillis = 0;
       if (requestCaching.minFreshSeconds() != -1) {
+        //一般取0
         minFreshMillis = SECONDS.toMillis(requestCaching.minFreshSeconds());
       }
 
@@ -225,7 +229,7 @@ public final class CacheStrategy {
       if (!responseCaching.mustRevalidate() && requestCaching.maxStaleSeconds() != -1) {
         maxStaleMillis = SECONDS.toMillis(requestCaching.maxStaleSeconds());
       }
-
+      //5. 如果缓存在过期时间内则可以直接使用，则直接返回上次缓存。
       if (!responseCaching.noCache() && ageMillis + minFreshMillis < freshMillis + maxStaleMillis) {
         Response.Builder builder = cacheResponse.newBuilder();
         if (ageMillis + minFreshMillis >= freshMillis) {
@@ -237,7 +241,8 @@ public final class CacheStrategy {
         }
         return new CacheStrategy(null, builder.build());
       }
-
+      //6. 如果缓存过期，且有ETag等信息，则发送If-None-Match、If-Modified-Since、If-Modified-Since等条件请求
+      //交给服务端判断处理
       // Find a condition to add to the request. If the condition is satisfied, the response body
       // will not be transmitted.
       String conditionName;

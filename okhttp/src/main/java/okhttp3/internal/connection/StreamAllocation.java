@@ -38,6 +38,8 @@ import okhttp3.internal.http2.StreamResetException;
 import static okhttp3.internal.Util.closeQuietly;
 
 /**
+ * 这个类协调3个实体：Connections、Streams、Calls<P></P>
+ *
  * This class coordinates the relationship between three entities:
  *
  * <ul>
@@ -104,14 +106,20 @@ public final class StreamAllocation {
 
   public HttpCodec newStream(
       OkHttpClient client, Interceptor.Chain chain, boolean doExtensiveHealthChecks) {
+    //连接超时
     int connectTimeout = chain.connectTimeoutMillis();
+    //读超时
     int readTimeout = chain.readTimeoutMillis();
+    //写超时
     int writeTimeout = chain.writeTimeoutMillis();
+    //连接失败是否重试
     boolean connectionRetryEnabled = client.retryOnConnectionFailure();
 
     try {
+      //完成 连接
       RealConnection resultConnection = findHealthyConnection(connectTimeout, readTimeout,
           writeTimeout, connectionRetryEnabled, doExtensiveHealthChecks);
+      //创建HttpCodec。
       HttpCodec resultCodec = resultConnection.newCodec(client, chain, this);
 
       synchronized (connectionPool) {
@@ -124,6 +132,8 @@ public final class StreamAllocation {
   }
 
   /**
+   * 返回一个连接来托管一个新的流。 这更喜欢现有的连接（如果存在的话），然后是池，最后建立一个新的连接。<P></P>
+   *
    * Finds a connection and returns it if it is healthy. If it is unhealthy the process is repeated
    * until a healthy connection is found.
    */
@@ -168,10 +178,12 @@ public final class StreamAllocation {
       if (codec != null) throw new IllegalStateException("codec != null");
       if (canceled) throw new IOException("Canceled");
 
+      ///尝试使用已分配的连接。 我们在这里需要小心，因为我们已经分配的连接可能已经被限制在创建新的流中。
       // Attempt to use an already-allocated connection. We need to be careful here because our
       // already-allocated connection may have been restricted from creating new streams.
       releasedConnection = this.connection;
       toClose = releaseIfNoNewStreams();
+      //1 查看是否有完好的连接
       if (this.connection != null) {
         // We had an already-allocated connection and it's good.
         result = this.connection;
@@ -181,7 +193,7 @@ public final class StreamAllocation {
         // If the connection was never reported acquired, don't report it as released!
         releasedConnection = null;
       }
-
+      //2 连接池中是否用可用的连接，有则使用
       if (result == null) {
         // Attempt to get a connection from the pool.
         Internal.instance.get(connectionPool, address, this, null);
@@ -202,10 +214,13 @@ public final class StreamAllocation {
       eventListener.connectionAcquired(call, result);
     }
     if (result != null) {
+      //如果我们找到了已经分配或者连接的连接，我们就完成了。
       // If we found an already-allocated or pooled connection, we're done.
       return result;
     }
 
+    //如果我们需要路线选择，请选择一个。 这是一项阻塞操作。
+    //线程的选择，多IP操作
     // If we need a route selection, make one. This is a blocking operation.
     boolean newRouteSelection = false;
     if (selectedRoute == null && (routeSelection == null || !routeSelection.hasNext())) {
@@ -213,10 +228,12 @@ public final class StreamAllocation {
       routeSelection = routeSelector.next();
     }
 
+    //3 如果没有可用连接，则自己创建一个
     synchronized (connectionPool) {
       if (canceled) throw new IOException("Canceled");
 
       if (newRouteSelection) {
+        // 现在我们有一组IP地址，再次尝试从池中获取连接。 这可能由于连接合并而匹配
         // Now that we have a set of IP addresses, make another attempt at getting a connection from
         // the pool. This could match due to connection coalescing.
         List<Route> routes = routeSelection.getAll();
@@ -246,17 +263,20 @@ public final class StreamAllocation {
       }
     }
 
+    //如果我们第二次发现一个连接池，我们就完成了。
     // If we found a pooled connection on the 2nd time around, we're done.
     if (foundPooledConnection) {
       eventListener.connectionAcquired(call, result);
       return result;
     }
 
+    //4 开始TCP以及TLS握手操作,这是阻塞操作
     // Do TCP + TLS handshakes. This is a blocking operation.
     result.connect(
         connectTimeout, readTimeout, writeTimeout, connectionRetryEnabled, call, eventListener);
     routeDatabase().connected(result.route());
 
+    //5 将新创建的连接，放在连接池中
     Socket socket = null;
     synchronized (connectionPool) {
       reportedAcquired = true;
@@ -264,6 +284,7 @@ public final class StreamAllocation {
       // Pool the connection.
       Internal.instance.put(connectionPool, result);
 
+      //如果同时创建了到同一地址的另一个多路复用连接，则释放此连接并获取该连接。
       // If another multiplexed connection to the same address was created concurrently, then
       // release this connection and acquire that one.
       if (result.isMultiplexed()) {

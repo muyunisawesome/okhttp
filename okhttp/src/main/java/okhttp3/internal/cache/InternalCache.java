@@ -24,26 +24,31 @@ import okhttp3.Response;
  * okhttp3.Cache}.
  */
 public interface InternalCache {
+  //获取缓存
   Response get(Request request) throws IOException;
-
+  //存入缓存
   CacheRequest put(Response response) throws IOException;
 
   /**
+   * 移除缓存
    * Remove any cache entries for the supplied {@code request}. This is invoked when the client
    * invalidates the cache, such as when making POST requests.
    */
   void remove(Request request) throws IOException;
 
   /**
+   * 更新缓存
    * Handles a conditional request hit by updating the stored cache response with the headers from
    * {@code network}. The cached response body is not updated. If the stored response has changed
    * since {@code cached} was returned, this does nothing.
    */
   void update(Response cached, Response network);
 
+  //跟踪一个满足缓存条件的GET请求
   /** Track an conditional GET that was satisfied by this cache. */
   void trackConditionalCacheHit();
 
+  //跟踪满足缓存策略CacheStrategy的响应
   /** Track an HTTP response being satisfied with {@code cacheStrategy}. */
   void trackResponse(CacheStrategy cacheStrategy);
 }

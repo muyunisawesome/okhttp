@@ -29,7 +29,11 @@ import okio.ForwardingSink;
 import okio.Okio;
 import okio.Sink;
 
-/** This is the last interceptor in the chain. It makes a network call to the server. */
+/**
+ * 负责从服务器读取响应的数据。 这是拦截器链中的最后一个<P></P>
+ *
+ * This is the last interceptor in the chain. It makes a network call to the server.
+ * */
 public final class CallServerInterceptor implements Interceptor {
   private final boolean forWebSocket;
 
@@ -45,7 +49,7 @@ public final class CallServerInterceptor implements Interceptor {
     Request request = realChain.request();
 
     long sentRequestMillis = System.currentTimeMillis();
-
+    //1. 写入请求头
     realChain.eventListener().requestHeadersStart(realChain.call());
     httpCodec.writeRequestHeaders(request);
     realChain.eventListener().requestHeadersEnd(realChain.call(), request);
@@ -55,12 +59,14 @@ public final class CallServerInterceptor implements Interceptor {
       // If there's a "Expect: 100-continue" header on the request, wait for a "HTTP/1.1 100
       // Continue" response before transmitting the request body. If we don't get that, return
       // what we did get (such as a 4xx response) without ever transmitting the request body.
+      // 如果请求中存在"Expect：100-continue"头，在发送请求体之前等待"HTTP / 1.1 100 Continue"响应。
+      // 如果我们没有得到，请返回我们得到的内容（例如4xx响应），而不发送请求主体。
       if ("100-continue".equalsIgnoreCase(request.header("Expect"))) {
         httpCodec.flushRequest();
         realChain.eventListener().responseHeadersStart(realChain.call());
         responseBuilder = httpCodec.readResponseHeaders(true);
       }
-
+      //2 写入请求体
       if (responseBuilder == null) {
         // Write the request body if the "Expect: 100-continue" expectation was met.
         realChain.eventListener().requestBodyStart(realChain.call());
@@ -97,7 +103,7 @@ public final class CallServerInterceptor implements Interceptor {
 
     realChain.eventListener()
         .responseHeadersEnd(realChain.call(), response);
-
+    //4 读取响应体
     int code = response.code();
     if (forWebSocket && code == 101) {
       // Connection is upgrading, but we need to ensure interceptors see a non-null response body.

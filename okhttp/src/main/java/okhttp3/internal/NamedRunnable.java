@@ -16,6 +16,8 @@
 package okhttp3.internal;
 
 /**
+ * 总是这是他自己的线程名的Runnable实现<P></P>
+ *
  * Runnable implementation which always sets its thread name.
  */
 public abstract class NamedRunnable implements Runnable {
@@ -26,14 +28,17 @@ public abstract class NamedRunnable implements Runnable {
   }
 
   @Override public final void run() {
+    //这个不错，线程池里线程是共享的，可以在使用的时候短暂改原线程名字，用完还原回去
     String oldName = Thread.currentThread().getName();
     Thread.currentThread().setName(name);
     try {
       execute();
     } finally {
+      //这就很妙了
       Thread.currentThread().setName(oldName);
     }
   }
 
+  //模板方法设计模式，让子类将具体的操作放入此方法
   protected abstract void execute();
 }

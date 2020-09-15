@@ -139,11 +139,13 @@ public final class RealInterceptorChain implements Interceptor.Chain {
           + " must call proceed() exactly once");
     }
 
+    // 这里我觉得不太好，每次都要创建一个chain实例，有点浪费吧
     // Call the next interceptor in the chain.
     RealInterceptorChain next = new RealInterceptorChain(interceptors, streamAllocation, httpCodec,
         connection, index + 1, request, call, eventListener, connectTimeout, readTimeout,
         writeTimeout);
-    Interceptor interceptor = interceptors.get(index);
+    //通常这里是RetryAndFollowUpInterceptor
+    Interceptor interceptor = interceptors.get(index); //从0开始？
     Response response = interceptor.intercept(next);
 
     // Confirm that the next interceptor made its required call to chain.proceed().

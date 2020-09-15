@@ -140,6 +140,7 @@ public final class Cache implements Closeable, Flushable {
   private static final int ENTRY_BODY = 1;
   private static final int ENTRY_COUNT = 2;
 
+  //缓存的实现
   final InternalCache internalCache = new InternalCache() {
     @Override public Response get(Request request) throws IOException {
       return Cache.this.get(request);
