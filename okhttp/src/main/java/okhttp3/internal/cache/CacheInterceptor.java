@@ -42,7 +42,7 @@ import static okhttp3.internal.Util.closeQuietly;
 import static okhttp3.internal.Util.discard;
 
 /**
- * 负责读取缓存以及更新缓存<P></P>
+ * 第三层拦截器。负责读取缓存以及更新缓存<P></P>
  *
  * Serves requests from the cache and writes responses to the cache.
  */

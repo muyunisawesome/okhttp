@@ -196,11 +196,13 @@ final class RealCall implements Call {
   }
 
   Response getResponseWithInterceptorChain() throws IOException {
-    //构建一个完整的拦截器栈
+    // 构建一个完整的拦截器栈
     // Build a full stack of interceptors.
     List<Interceptor> interceptors = new ArrayList<>();//这是一个List，是有序的
-    interceptors.addAll(client.interceptors()); //首先添加的是用户添加的全局拦截器
-    interceptors.add(retryAndFollowUpInterceptor); //错误重试、重定向拦截器
+    //首先添加的是用户添加的全局拦截器
+    interceptors.addAll(client.interceptors());
+    //错误重试、重定向拦截器
+    interceptors.add(retryAndFollowUpInterceptor);
     //桥接拦截器，桥接应用层与网络层，添加必要的头、
     interceptors.add(new BridgeInterceptor(client.cookieJar()));
     //缓存处理，Last-Modified、ETag、DiskLruCache等

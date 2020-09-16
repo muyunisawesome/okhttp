@@ -30,7 +30,7 @@ import okio.Okio;
 import okio.Sink;
 
 /**
- * 负责从服务器读取响应的数据。 这是拦截器链中的最后一个<P></P>
+ * 第五层（最后）拦截器，负责从服务器读取响应的数据<P></P>
  *
  * This is the last interceptor in the chain. It makes a network call to the server.
  * */

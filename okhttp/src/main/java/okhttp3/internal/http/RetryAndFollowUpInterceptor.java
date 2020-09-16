@@ -54,7 +54,7 @@ import static okhttp3.internal.http.StatusLine.HTTP_PERM_REDIRECT;
 import static okhttp3.internal.http.StatusLine.HTTP_TEMP_REDIRECT;
 
 /**
- * 最外层的拦截器<br>
+ * 第一层的拦截器<br>
  * 这个拦截器从失败中恢复 并且如果必要会跟随重定向。如果call被取消将会报IOException<br>
  * 作用就是处理了一些连接异常以及重定向<P></P>
  *
@@ -115,7 +115,7 @@ public final class RetryAndFollowUpInterceptor implements Interceptor {
     //Connections、Streams和Calls之间的管理，该类初始化一个Socket连接对象，获取输入/输出流对象。
     streamAllocation = new StreamAllocation(client.connectionPool(), createAddress(request.url()),
         call, eventListener, callStackTrace);
-    //重定向次数
+    //记录重定向次数
     int followUpCount = 0;
     Response priorResponse = null;
     while (true) {
@@ -166,7 +166,7 @@ public final class RetryAndFollowUpInterceptor implements Interceptor {
                     .build())
             .build();
       }
-      // 根据响应码处理请求，返回Request不为空时则进行重定向处理
+      // 重定向处理，根据响应码处理请求，返回Request不为空时则重定向
       Request followUp = followUpRequest(response);
 
       if (followUp == null) {

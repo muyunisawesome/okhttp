@@ -33,6 +33,7 @@ import okio.Okio;
 import static okhttp3.internal.Util.hostHeader;
 
 /**
+ * 第二层拦截器<br>
  * 负责把用户构造的请求转换为发送给服务器的请求，把服务器返回的响应转换为对用户友好的响应<P></P>
  *
  * Bridges from application code to network code. First it builds a network request from a user
@@ -50,6 +51,7 @@ public final class BridgeInterceptor implements Interceptor {
     Request userRequest = chain.request();
     Request.Builder requestBuilder = userRequest.newBuilder();
 
+    //从这开始给请求添加了一些请求头信息
     RequestBody body = userRequest.body();
     if (body != null) {
       MediaType contentType = body.contentType();
