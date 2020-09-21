@@ -27,6 +27,9 @@ import javax.annotation.Nullable;
 public interface Interceptor {
   Response intercept(Chain chain) throws IOException;
 
+  /**
+   * 拦截器链
+   */
   interface Chain {
     Request request();
 

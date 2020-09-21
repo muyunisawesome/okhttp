@@ -73,15 +73,19 @@ final class RealCall implements Call {
   }
 
   @Override public Response execute() throws IOException {
+    //第一步。首先出现一个同步代码块，对当前对象加锁，
+    // 通过一个标志位executed判断该对象的execute方法是否已经执行过，如果执行过就抛出异常；这也就是同一个Call只能执行一次的原因
     synchronized (this) {
       if (executed) throw new IllegalStateException("Already Executed");
       executed = true;
     }
+    //第二步。这个是用来捕获okhttp的请求堆栈信息不是重点
     captureCallStackTrace();
     eventListener.callStart(this);
     try {
+      //第三步。调用Dispatcher的executed方法，将请求放入分发器，这是非常重要的一步
       client.dispatcher().executed(this);
-      //通过拦截器链获取响应：即执行
+      //第四步。通过拦截器链获取响应：即执行
       Response result = getResponseWithInterceptorChain();
       if (result == null) throw new IOException("Canceled");
       return result;
@@ -89,6 +93,7 @@ final class RealCall implements Call {
       eventListener.callFailed(this, e);
       throw e;
     } finally {
+      //第五步。调用dispatcher的finished方法，回收同步请求
       client.dispatcher().finished(this);
     }
   }
@@ -105,6 +110,7 @@ final class RealCall implements Call {
       if (executed) throw new IllegalStateException("Already Executed");
       executed = true;
     }
+    //获取堆栈信息
     captureCallStackTrace();
     eventListener.callStart(this);
     //创建一个AsyncCall，投入队列
@@ -140,6 +146,7 @@ final class RealCall implements Call {
       this.responseCallback = responseCallback;
     }
 
+    //主机名
     String host() {
       return originalRequest.url().host();
     }
@@ -159,10 +166,10 @@ final class RealCall implements Call {
         //通过拦截器链获取响应：即执行
         Response response = getResponseWithInterceptorChain();
         if (retryAndFollowUpInterceptor.isCanceled()) { //如果取消
-          signalledCallback = true; //已回调，告知失败
+          signalledCallback = true; //如果请求被取消,回调onFailure，告知失败
           responseCallback.onFailure(RealCall.this, new IOException("Canceled"));
         } else {
-          signalledCallback = true; //已回调，告知成功
+          signalledCallback = true; //正常情况,回调onResponse，告知成功
           responseCallback.onResponse(RealCall.this, response);
         }
       } catch (IOException e) {
@@ -196,9 +203,9 @@ final class RealCall implements Call {
   }
 
   Response getResponseWithInterceptorChain() throws IOException {
-    // 构建一个完整的拦截器栈
+    // 构建一个完整的拦截器栈, 这是一个List，是有序的
     // Build a full stack of interceptors.
-    List<Interceptor> interceptors = new ArrayList<>();//这是一个List，是有序的
+    List<Interceptor> interceptors = new ArrayList<>();
     //首先添加的是用户添加的全局拦截器
     interceptors.addAll(client.interceptors());
     //错误重试、重定向拦截器

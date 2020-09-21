@@ -255,6 +255,7 @@ public final class Headers {
   }
 
   public static final class Builder {
+    //用来存在头部信息
     final List<String> namesAndValues = new ArrayList<>(20);
 
     /**

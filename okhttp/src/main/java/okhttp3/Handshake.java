@@ -26,6 +26,7 @@ import javax.net.ssl.SSLSession;
 import okhttp3.internal.Util;
 
 /**
+ * 负责握手<br>
  * A record of a TLS handshake. For HTTPS clients, the client is <i>local</i> and the remote server
  * is its <i>peer</i>.
  *

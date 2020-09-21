@@ -38,6 +38,7 @@ import okhttp3.internal.http2.StreamResetException;
 import static okhttp3.internal.Util.closeQuietly;
 
 /**
+ * 封装了一次请求所需的网络组件<br>
  * 这个类协调3个实体：Connections、Streams、Calls<P></P>
  *
  * This class coordinates the relationship between three entities:
@@ -77,22 +78,22 @@ import static okhttp3.internal.Util.closeQuietly;
  * then canceling may break the entire connection.
  */
 public final class StreamAllocation {
-  public final Address address;
+  public final Address address; //地址
   private RouteSelector.Selection routeSelection;
-  private Route route;
-  private final ConnectionPool connectionPool;
+  private Route route;//路由
+  private final ConnectionPool connectionPool;  //连接池
   public final Call call;
   public final EventListener eventListener;
-  private final Object callStackTrace;
+  private final Object callStackTrace;//日志
 
   // State guarded by connectionPool.
-  private final RouteSelector routeSelector;
-  private int refusedStreamCount;
-  private RealConnection connection;
+  private final RouteSelector routeSelector;  // 路由选择器
+  private int refusedStreamCount;  //拒绝次数
+  private RealConnection connection; //连接,记录当前这个Stream是被分配到哪个RealConnection上
   private boolean reportedAcquired;
-  private boolean released;
-  private boolean canceled;
-  private HttpCodec codec;
+  private boolean released;  //是否被释放
+  private boolean canceled;  //是否被取消
+  private HttpCodec codec; //用来进行网络IO操作
 
   public StreamAllocation(ConnectionPool connectionPool, Address address, Call call,
       EventListener eventListener, Object callStackTrace) {
@@ -116,13 +117,15 @@ public final class StreamAllocation {
     boolean connectionRetryEnabled = client.retryOnConnectionFailure();
 
     try {
-      //完成 连接
+      //完成 连接，即找到一个健康的连接
       RealConnection resultConnection = findHealthyConnection(connectTimeout, readTimeout,
           writeTimeout, connectionRetryEnabled, doExtensiveHealthChecks);
       //创建HttpCodec。
+      //利用连接实例化流HttpCodec对象，如果是HTTP/2返回Http2Codec，否则返回Http1Codec
       HttpCodec resultCodec = resultConnection.newCodec(client, chain, this);
 
       synchronized (connectionPool) {
+        //让当前的StreamAllocation持有这个流对象，然后返回它
         codec = resultCodec;
         return resultCodec;
       }
@@ -141,9 +144,11 @@ public final class StreamAllocation {
       int writeTimeout, boolean connectionRetryEnabled, boolean doExtensiveHealthChecks)
       throws IOException {
     while (true) {
+      //找到一个连接
       RealConnection candidate = findConnection(connectTimeout, readTimeout, writeTimeout,
           connectionRetryEnabled);
 
+      // 如果这个连接是新建立的，那肯定是健康的，直接返回
       // If this is a brand new connection, we can skip the extensive health checks.
       synchronized (connectionPool) {
         if (candidate.successCount == 0) {
@@ -151,13 +156,17 @@ public final class StreamAllocation {
         }
       }
 
+      // 如果不是新创建的，需要检查是否健康
       // Do a (potentially slow) check to confirm that the pooled connection is still good. If it
       // isn't, take it out of the pool and start again.
       if (!candidate.isHealthy(doExtensiveHealthChecks)) {
+        //不健康 关闭连接，释放Socket资源
+        //如果这个连接不会再创建新的stream，从连接池移除
+        //继续下次寻找连接操作
         noNewStreams();
         continue;
       }
-
+      //如果是健康的就重用，返回
       return candidate;
     }
   }
@@ -230,6 +239,7 @@ public final class StreamAllocation {
 
     //3 如果没有可用连接，则自己创建一个
     synchronized (connectionPool) {
+      //请求被取消了 抛出异常
       if (canceled) throw new IOException("Canceled");
 
       if (newRouteSelection) {
@@ -254,11 +264,14 @@ public final class StreamAllocation {
           selectedRoute = routeSelection.next();
         }
 
+        // 到这里说明实在找不到 必须要实例化一个连接了
         // Create a connection and assign it to this allocation immediately. This makes it possible
         // for an asynchronous cancel() to interrupt the handshake we're about to do.
         route = selectedRoute;
         refusedStreamCount = 0;
         result = new RealConnection(connectionPool, selectedRoute);
+        //将这个连接分配给流
+        //同时将流添加到这个连接的集合里
         acquire(result, false);
       }
     }
@@ -280,11 +293,12 @@ public final class StreamAllocation {
     Socket socket = null;
     synchronized (connectionPool) {
       reportedAcquired = true;
-
+      // 将新创建的连接放到连接池中
       // Pool the connection.
       Internal.instance.put(connectionPool, result);
 
-      //如果同时创建了到同一地址的另一个多路复用连接，则释放此连接并获取该连接。
+      //如果同时创建了到同一地址的另一个多路复用连接，（只要是HTTP/2连接，就可以同时用于多个HTTP请求，所有指向该地址的请求都应该基于同一个TCP连接），
+      //同时连接池里存在一个同样的连接，那就释放掉当前这个连接，复用连接池里的连接
       // If another multiplexed connection to the same address was created concurrently, then
       // release this connection and acquire that one.
       if (result.isMultiplexed()) {
@@ -292,9 +306,11 @@ public final class StreamAllocation {
         result = connection;
       }
     }
+    //关闭新建连接的Socket
     closeQuietly(socket);
 
     eventListener.connectionAcquired(call, result);
+    //返回复用的连接
     return result;
   }
 
@@ -357,6 +373,7 @@ public final class StreamAllocation {
     return connection;
   }
 
+  //释放连接，关闭Socket
   public void release() {
     Socket socket;
     Connection releasedConnection;
@@ -371,6 +388,7 @@ public final class StreamAllocation {
     }
   }
 
+  //设置不能在此连接上创建新的流，同时关闭Socket
   /** Forbid new streams from being created on the connection that hosts this allocation. */
   public void noNewStreams() {
     Socket socket;
@@ -395,22 +413,27 @@ public final class StreamAllocation {
    */
   private Socket deallocate(boolean noNewStreams, boolean released, boolean streamFinished) {
     assert (Thread.holdsLock(connectionPool));
-
+    //关闭流
     if (streamFinished) {
       this.codec = null;
     }
+    //关闭流
     if (released) {
       this.released = true;
     }
     Socket socket = null;
     if (connection != null) {
       if (noNewStreams) {
+        //重置标志 不能在该连接上分配流
         connection.noNewStreams = true;
       }
       if (this.codec == null && (this.released || connection.noNewStreams)) {
+        //从连接的StreamAllocation链表中删除当前StreamAllocation
         release(connection);
+        //如果链表为空，说明是个空闲连接
         if (connection.allocations.isEmpty()) {
           connection.idleAtNanos = System.nanoTime();
+          //从连接池中清除该连接
           if (Internal.instance.connectionBecameIdle(connectionPool, connection)) {
             socket = connection.socket();
           }
@@ -418,9 +441,11 @@ public final class StreamAllocation {
         connection = null;
       }
     }
+    //返回该连接持有的Socket
     return socket;
   }
 
+  //这个方法就是取消流或者连接
   public void cancel() {
     HttpCodec codecToCancel;
     RealConnection connectionToCancel;
@@ -483,7 +508,7 @@ public final class StreamAllocation {
   public void acquire(RealConnection connection, boolean reportedAcquired) {
     assert (Thread.holdsLock(connectionPool));
     if (this.connection != null) throw new IllegalStateException();
-
+    //将传进来的连接赋值给全局变量，同时将分配的流添加到这个连接的allocations集合里
     this.connection = connection;
     this.reportedAcquired = reportedAcquired;
     connection.allocations.add(new StreamAllocationReference(this, callStackTrace));
@@ -491,6 +516,7 @@ public final class StreamAllocation {
 
   /** Remove this allocation from the connection's list of allocations. */
   private void release(RealConnection connection) {
+    //作用是从连接的StreamAllocation链表中删除当前StreamAllocation，解除连接和StreamAllocation的引用关系
     for (int i = 0, size = connection.allocations.size(); i < size; i++) {
       Reference<StreamAllocation> reference = connection.allocations.get(i);
       if (reference.get() == this) {
@@ -524,7 +550,12 @@ public final class StreamAllocation {
     return socket;
   }
 
+  //判断是否有可用的路由
   public boolean hasMoreRoutes() {
+    //没有可选择的路由意味着
+    //没有下一个 IP
+    //没有下一个代理
+    //没有下一个延迟使用的 Route（之前有失败过的路由，会在这个列表中延迟使用）
     return route != null
         || (routeSelection != null && routeSelection.hasNext())
         || routeSelector.hasNext();

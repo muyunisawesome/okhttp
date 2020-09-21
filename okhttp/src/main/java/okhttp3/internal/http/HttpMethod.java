@@ -16,6 +16,8 @@
 package okhttp3.internal.http;
 
 public final class HttpMethod {
+
+  //如果是这些请求方法，那么获取到的响应将不会进行缓存
   public static boolean invalidatesCache(String method) {
     return method.equals("POST")
         || method.equals("PATCH")

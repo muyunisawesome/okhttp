@@ -478,23 +478,26 @@ public class OkHttpClient implements Cloneable, Call.Factory, WebSocket.Factory 
     public Builder() {
       dispatcher = new Dispatcher(); //创建一个派发器
       protocols = DEFAULT_PROTOCOLS; // 支持的协议，默认http1.0、http2.0
+      //设置支持的连接，默认是使用SNI和ALPN等扩展的现代TLS连接和未加密、未认证的http连接
       connectionSpecs = DEFAULT_CONNECTION_SPECS;
-      eventListenerFactory = EventListener.factory(EventListener.NONE);
-      proxySelector = ProxySelector.getDefault();
-      cookieJar = CookieJar.NO_COOKIES;
-      socketFactory = SocketFactory.getDefault();
+      eventListenerFactory = EventListener.factory(EventListener.NONE); //Call状态监听器
+      proxySelector = ProxySelector.getDefault();//使用默认的代理选择器
+      cookieJar = CookieJar.NO_COOKIES;//默认没有cookie
+      socketFactory = SocketFactory.getDefault();//创建socket工厂类
+      //下面四个是安全相关的配置
       hostnameVerifier = OkHostnameVerifier.INSTANCE;
       certificatePinner = CertificatePinner.DEFAULT;
       proxyAuthenticator = Authenticator.NONE;
       authenticator = Authenticator.NONE;
-      connectionPool = new ConnectionPool();//连接池
-      dns = Dns.SYSTEM;
+      connectionPool = new ConnectionPool();//连接池。使用连接池技术减少请求的延迟(如果SPDY是可用的话)
+      dns = Dns.SYSTEM; //域名解析系统
       followSslRedirects = true;
       followRedirects = true;
       retryOnConnectionFailure = true;
       connectTimeout = 10_000; //超时时间
       readTimeout = 10_000;
       writeTimeout = 10_000;
+      //为了保持长连接，我们必须间隔一段时间发送一个ping指令进行保活
       pingInterval = 0;
     }
 

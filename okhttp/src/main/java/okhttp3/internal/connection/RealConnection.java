@@ -71,42 +71,51 @@ import static java.net.HttpURLConnection.HTTP_PROXY_AUTH;
 import static java.util.concurrent.TimeUnit.MILLISECONDS;
 import static okhttp3.internal.Util.closeQuietly;
 
+/**
+ * 真是连接，创建意味着Socket的创建
+ */
 public final class RealConnection extends Http2Connection.Listener implements Connection {
   private static final String NPE_THROW_WITH_NULL = "throw with null exception";
   private static final int MAX_TUNNEL_ATTEMPTS = 21;
 
-  private final ConnectionPool connectionPool;
-  private final Route route;
+  private final ConnectionPool connectionPool;//连接池
+  private final Route route; //路由
 
   // The fields below are initialized by connect() and never reassigned.
 
   /** The low-level TCP socket. */
-  private Socket rawSocket;
+  private Socket rawSocket;  /** 底层socket. */
 
   /**
    * The application layer socket. Either an {@link SSLSocket} layered over {@link #rawSocket}, or
    * {@link #rawSocket} itself if this connection does not use SSL.
    */
-  private Socket socket;
-  private Handshake handshake;
-  private Protocol protocol;
-  private Http2Connection http2Connection;
-  private BufferedSource source;
-  private BufferedSink sink;
+  private Socket socket;  //应用层Socket
+  private Handshake handshake; //负责握手
+  private Protocol protocol; //协议
+  private Http2Connection http2Connection;  //负责Http/2的连接 支持多路复用，一个连接可以承载多个Http请求
+  private BufferedSource source; //输入流
+  private BufferedSink sink;  //输出流
 
   // The fields below track connection state and are guarded by connectionPool.
 
+  /** 如果为true，表明不能在这个连接上创建新的流；如果被设置为true，后面就不会再被改变 */
   /** If true, no new streams can be created on this connection. Once true this is always true. */
   public boolean noNewStreams;
 
+  //成功的次数，如果为0，说明是一个新建的连接
   public int successCount;
 
   /**
+   * 此连接可以承载的最大并发流数，默认Http/1.x是1，如果是Http/2，这个值会被重置
+   * 如果allocations.size（）<allocationLimit就可以在此连接上创建新的流
+   * <br>
    * The maximum number of concurrent streams that can be carried by this connection. If {@code
    * allocations.size() < allocationLimit} then new streams can be created on this connection.
    */
   public int allocationLimit = 1;
 
+  //负责保存开辟的stream.  /** 分配到此连接的流 */
   /** Current streams carried by this connection. */
   public final List<Reference<StreamAllocation>> allocations = new ArrayList<>();
 
@@ -128,14 +137,17 @@ public final class RealConnection extends Http2Connection.Listener implements Co
 
   public void connect(int connectTimeout, int readTimeout, int writeTimeout,
       boolean connectionRetryEnabled, Call call, EventListener eventListener) {
+    //protocol只能在该方法后初始化
     if (protocol != null) throw new IllegalStateException("already connected");
     //线路选择
     RouteException routeException = null;
     List<ConnectionSpec> connectionSpecs = route.address().connectionSpecs();
     ConnectionSpecSelector connectionSpecSelector = new ConnectionSpecSelector(connectionSpecs);
 
+    //SSLSocketFactory为空，也就是要求请求/响应明文传输，需要做安全性检查，以确认系统允许明文传输
     if (route.address().sslSocketFactory() == null) {
       if (!connectionSpecs.contains(ConnectionSpec.CLEARTEXT)) {
+        //说明客户端未启用CLEARTEXT通信，那就没法使用了，抛出异常
         throw new RouteException(new UnknownServiceException(
             "CLEARTEXT communication not enabled for client"));
       }
@@ -148,7 +160,7 @@ public final class RealConnection extends Http2Connection.Listener implements Co
     //开始连接
     while (true) {
       try {
-        //建立隧道连接
+        //建立隧道连接 用的少
         if (route.requiresTunnel()) {
           connectTunnel(connectTimeout, readTimeout, writeTimeout, call, eventListener);
           if (rawSocket == null) {
@@ -157,11 +169,11 @@ public final class RealConnection extends Http2Connection.Listener implements Co
             break;
           }
         } else {
-          //建立普通socket连接
+          //建立普通socket连接 //三次握手，使用Socket创建 TCP 连接 通用
           connectSocket(connectTimeout, readTimeout, call, eventListener);
         }
         // 建立协议
-        //不管是建立隧道连接，还是建立普通连接，都少不了 建立协议 这一步。
+        // 不管是建立隧道连接，还是建立普通连接，都少不了 建立协议 这一步。
         // 这一步是在建立好了TCP连接之后，而在该TCP能被拿来收发数据之前执行的。
         // 它主要为数据的加密传输做一些初始化，比如TLS握手，HTTP/2的协议协商等
         establishProtocol(connectionSpecSelector, call, eventListener);
@@ -201,6 +213,7 @@ public final class RealConnection extends Http2Connection.Listener implements Co
 
     if (http2Connection != null) {
       synchronized (connectionPool) {
+        //如果是Http/2连接，就重置最大连接数
         allocationLimit = http2Connection.maxConcurrentStreams();
       }
     }
@@ -275,6 +288,7 @@ public final class RealConnection extends Http2Connection.Listener implements Co
 
   private void establishProtocol(ConnectionSpecSelector connectionSpecSelector, Call call,
       EventListener eventListener) throws IOException {
+    //如果不是ssl，那就设置应用层协议为Http/1.1
     if (route.address().sslSocketFactory() == null) {
       protocol = Protocol.HTTP_1_1;
       socket = rawSocket;
@@ -282,10 +296,12 @@ public final class RealConnection extends Http2Connection.Listener implements Co
     }
 
     eventListener.secureConnectStart(call);
+    //创建TLS连接
     connectTls(connectionSpecSelector);
     eventListener.secureConnectEnd(call, handshake);
-
+    //如果应用层协议是Http/2，那就需要实例化http2Connection
     if (protocol == Protocol.HTTP_2) {
+      //设置读取数据时阻塞链路的超时时间，值为0意味着没有超时限制，无限等待
       socket.setSoTimeout(0); // HTTP/2 connection timeouts are set per-stream.
       http2Connection = new Http2Connection.Builder(true)
           .socket(socket, route.address().url().host(), source, sink)
@@ -301,21 +317,24 @@ public final class RealConnection extends Http2Connection.Listener implements Co
     boolean success = false;
     SSLSocket sslSocket = null;
     try {
+      // 在已连接的socket上再包装一个ssl
       // Create the wrapper over the connected socket.
       sslSocket = (SSLSocket) sslSocketFactory.createSocket(
           rawSocket, address.url().host(), address.url().port(), true /* autoClose */);
 
+      // 给socket配置合适的连接规格
       // Configure the socket's ciphers, TLS versions, and extensions.
       ConnectionSpec connectionSpec = connectionSpecSelector.configureSecureSocket(sslSocket);
       if (connectionSpec.supportsTlsExtensions()) {
         Platform.get().configureTlsExtensions(
             sslSocket, address.url().host(), address.protocols());
       }
-
+      // 握手协商 客户端正式向服务端发出数据包，内容为可选择的密码和请求证书。服务端会返回相应的密码套件，tls 版本，节点证书，本地证书等等，然后封装在 Handshake 类中
       // Force handshake. This can throw!
       sslSocket.startHandshake();
       Handshake unverifiedHandshake = Handshake.get(sslSocket.getSession());
 
+      // 验证Socket的证书是否可用于目标服务器
       // Verify that the socket's certificates are acceptable for the target host.
       if (!address.hostnameVerifier().verify(address.url().host(), sslSocket.getSession())) {
         X509Certificate cert = (X509Certificate) unverifiedHandshake.peerCertificates().get(0);
@@ -325,15 +344,18 @@ public final class RealConnection extends Http2Connection.Listener implements Co
             + "\n    subjectAltNames: " + OkHostnameVerifier.allSubjectAltNames(cert));
       }
 
+      // 检查证书pinner是否满足所提供的证书
       // Check that the certificate pinner is satisfied by the certificates presented.
       address.certificatePinner().check(address.url().host(),
           unverifiedHandshake.peerCertificates());
 
+      // 协商成功， 保存握手和ALPN协议
       // Success! Save the handshake and the ALPN protocol.
       String maybeProtocol = connectionSpec.supportsTlsExtensions()
           ? Platform.get().getSelectedProtocol(sslSocket)
           : null;
       socket = sslSocket;
+      //实例化输出输入流
       source = Okio.buffer(Okio.source(socket));
       sink = Okio.buffer(Okio.sink(socket));
       handshake = unverifiedHandshake;
@@ -366,14 +388,19 @@ public final class RealConnection extends Http2Connection.Listener implements Co
     // 在每个SSL +代理连接的第一个消息对上创建一个SSL隧道。
     String requestLine = "CONNECT " + Util.hostHeader(url, true) + " HTTP/1.1";
     while (true) {
+      //实例化I/O操作对象
       Http1Codec tunnelConnection = new Http1Codec(null, null, source, sink);
+      //设置超时时间
       source.timeout().timeout(readTimeout, MILLISECONDS);
       sink.timeout().timeout(writeTimeout, MILLISECONDS);
+      //将请求发送到代理服务器，然后转发给目标服务器
       tunnelConnection.writeRequest(tunnelRequest.headers(), requestLine);
       tunnelConnection.finishRequest();
+      //获取代理服务器的响应，其实是目标服务器的响应，代理服务器转发
       Response response = tunnelConnection.readResponseHeaders(false)
           .request(tunnelRequest)
           .build();
+      //来自CONNECT的响应主体应该是空的，但如果不是，那么我们应该在继续之前使用它
       // The response body from a CONNECT should be empty, but if it is not then we should consume
       // it before proceeding.
       long contentLength = HttpHeaders.contentLength(response);
@@ -385,7 +412,7 @@ public final class RealConnection extends Http2Connection.Listener implements Co
       body.close();
 
       switch (response.code()) {
-        case HTTP_OK:
+        case HTTP_OK: //建立成功
           // Assume the server won't send a TLS ServerHello until we send a TLS ClientHello. If
           // that happens, then we will have buffered bytes that are needed by the SSLSocket!
           // This check is imperfect: it doesn't tell us whether a handshake will succeed, just
@@ -394,11 +421,11 @@ public final class RealConnection extends Http2Connection.Listener implements Co
             throw new IOException("TLS tunnel buffered too many bytes!");
           }
           return null;
-
+        //表示服务器要求客户端提供访问证书，进行代理认证，将认证信息合并到tunnelRequest中以便下次重试
         case HTTP_PROXY_AUTH:
           tunnelRequest = route.address().proxyAuthenticator().authenticate(route, response);
           if (tunnelRequest == null) throw new IOException("Failed to authenticate with proxy");
-
+          //代理认证通过，但是响应要求close，则关闭TCP连接此时客户端无法再此连接上发送数据
           if ("close".equalsIgnoreCase(response.header("Connection"))) {
             return tunnelRequest;
           }
@@ -518,6 +545,8 @@ public final class RealConnection extends Http2Connection.Listener implements Co
     return socket;
   }
 
+  //连接对象的Socket关闭了、输入流关闭了、输出流关闭了，这些情况只要有一个发生都是不健康的
+  //http2连接关闭视为不健康
   /** Returns true if this connection is ready to host new streams. */
   public boolean isHealthy(boolean doExtensiveChecks) {
     if (socket.isClosed() || socket.isInputShutdown() || socket.isOutputShutdown()) {

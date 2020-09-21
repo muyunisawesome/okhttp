@@ -34,18 +34,21 @@ import static okhttp3.internal.Util.checkDuration;
  * interceptors, the OkHttp core, all network interceptors, and finally the network caller.
  */
 public final class RealInterceptorChain implements Interceptor.Chain {
-  private final List<Interceptor> interceptors;
+  private final List<Interceptor> interceptors;   //拦截器列表，装载了所有拦截器
+  //------下面三个很重要----
   private final StreamAllocation streamAllocation;
   private final HttpCodec httpCodec;
   private final RealConnection connection;
-  private final int index;
-  private final Request request;
+  //---------------------
+
+  private final int index;  //拦截器列表索引
+  private final Request request;  //封装请求信息的对象
   private final Call call;
   private final EventListener eventListener;
   private final int connectTimeout;
   private final int readTimeout;
   private final int writeTimeout;
-  private int calls;
+  private int calls;  //proceed方法执行次数
 
   public RealInterceptorChain(List<Interceptor> interceptors, StreamAllocation streamAllocation,
       HttpCodec httpCodec, RealConnection connection, int index, Request request, Call call,
@@ -54,7 +57,7 @@ public final class RealInterceptorChain implements Interceptor.Chain {
     this.connection = connection;
     this.streamAllocation = streamAllocation;
     this.httpCodec = httpCodec;
-    this.index = index;
+    this.index = index; //默认传的是0，其实是interceptors数组的索引，在proceed方法获取数组中的拦截器用的
     this.request = request;
     this.call = call;
     this.eventListener = eventListener;
@@ -121,18 +124,23 @@ public final class RealInterceptorChain implements Interceptor.Chain {
     return proceed(request, streamAllocation, httpCodec, connection);
   }
 
+  //依次取出拦截器链表中的每个拦截器去获取Response
   public Response proceed(Request request, StreamAllocation streamAllocation, HttpCodec httpCodec,
       RealConnection connection) throws IOException {
+    //如果索引值大于等于拦截器列表大小，就抛出异常，因为后续会出现数组越界的异常
     if (index >= interceptors.size()) throw new AssertionError();
 
+    // 记录本方法调用次数
     calls++;
 
+    // 如果已经为该Request创建了stream，就不再继续创建了
     // If we already have a stream, confirm that the incoming request will use it.
     if (this.httpCodec != null && !this.connection.supportsUrl(request.url())) {
       throw new IllegalStateException("network interceptor " + interceptors.get(index - 1)
           + " must retain the same host and port");
     }
 
+    // 如果已经为该Request创建了stream，那该方法只能调用一次
     // If we already have a stream, confirm that this is the only call to chain.proceed().
     if (this.httpCodec != null && calls > 1) {
       throw new IllegalStateException("network interceptor " + interceptors.get(index - 1)
@@ -146,8 +154,10 @@ public final class RealInterceptorChain implements Interceptor.Chain {
         writeTimeout);
     //通常这里是RetryAndFollowUpInterceptor
     Interceptor interceptor = interceptors.get(index); //从0开始？
+    //执行拦截器的intercept方法获取结果，并将新的拦截器链对象传入
     Response response = interceptor.intercept(next);
 
+    // 确保该方法只能调用一次
     // Confirm that the next interceptor made its required call to chain.proceed().
     if (httpCodec != null && index + 1 < interceptors.size() && next.calls != 1) {
       throw new IllegalStateException("network interceptor " + interceptor

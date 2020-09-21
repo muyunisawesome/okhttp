@@ -37,7 +37,7 @@ public final class Request {
   Request(Builder builder) {
     this.url = builder.url;
     this.method = builder.method;
-    this.headers = builder.headers.build();
+    this.headers = builder.headers.build(); //这套的
     this.body = builder.body;
     this.tag = builder.tag != null ? builder.tag : this;
   }

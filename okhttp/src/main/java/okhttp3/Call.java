@@ -18,7 +18,7 @@ package okhttp3;
 import java.io.IOException;
 
 /**
- * 一个call是一个已准备执行的请求。可以被取消，当这个对象表示单个的请求/响应对（流）时，不能被执行两次。<br>
+ * 一个call是一个已准备好执行的请求。可以被取消，当这个对象表示单个的请求/响应对（流）时，不能被执行两次。<P></P>
  * A call is a request that has been prepared for execution. A call can be canceled. As this object
  * represents a single request/response pair (stream), it cannot be executed twice.
  */
@@ -59,6 +59,12 @@ public interface Call extends Cloneable {
   Response execute() throws IOException;
 
   /**
+   * 进行异步请求<br>
+   * 至于何时执行这个请求由分发器决定<br>
+   * 通常是立即执行，除非当前有任务在执行或不符合限制条件<br>
+   * 如果不能立即执行，会被保存到等待执行的异步请求队列<br>
+   * 请求结束后，会通过回调接口将结果返回<P></P>
+   *
    * Schedules the request to be executed at some point in the future.
    *
    * <p>The {@link OkHttpClient#dispatcher dispatcher} defines when the request will run: usually
@@ -71,15 +77,21 @@ public interface Call extends Cloneable {
    */
   void enqueue(Callback responseCallback);
 
-  /** Cancels the request, if possible. Requests that are already complete cannot be canceled. */
+  /**
+   * 取消这个RealCall 如果请求已经有返回了，那么就不能被取消了<P></P>
+   * Cancels the request, if possible. Requests that are already complete cannot be canceled. */
   void cancel();
 
   /**
+   * 判断是否执行过<P></P>
    * Returns true if this call has been either {@linkplain #execute() executed} or {@linkplain
    * #enqueue(Callback) enqueued}. It is an error to execute a call more than once.
    */
   boolean isExecuted();
 
+  /**
+   * 请求是否被取消
+   */
   boolean isCanceled();
 
   /**

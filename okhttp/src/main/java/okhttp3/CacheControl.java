@@ -5,6 +5,8 @@ import javax.annotation.Nullable;
 import okhttp3.internal.http.HttpHeaders;
 
 /**
+ * 单个请求缓存配置<P></P>
+ *
  * A Cache-Control header with cache directives from a server or client. These directives set policy
  * on what responses can be stored, and which requests can be satisfied by those stored responses.
  *
@@ -12,12 +14,16 @@ import okhttp3.internal.http.HttpHeaders;
  */
 public final class CacheControl {
   /**
+   * 强制使用网络，不使用缓存<br>
+   * 某些情况下，比如用户点击刷新按钮，那么就需要跳过缓存，重新去服务器获取最小数据，那就需要强制使用网络，不使用缓存<P></P>
+   *
    * Cache control request directives that require network validation of responses. Note that such
    * requests may be assisted by the cache via conditional GET requests.
    */
   public static final CacheControl FORCE_NETWORK = new Builder().noCache().build();
 
   /**
+   * 强制使用缓存，不使用网络
    * Cache control request directives that uses the cache only, even if the cached response is
    * stale. If the response isn't available in the cache or requires server validation, the call
    * will fail with a {@code 504 Unsatisfiable Request}.
@@ -298,6 +304,7 @@ public final class CacheControl {
     }
 
     /**
+     * 如果必须要服务器验证下缓存的响应，可以使用max-age=0指令
      * Sets the maximum age of a cached response. If the cache response's age exceeds {@code
      * maxAge}, it will not be used and a network request will be made.
      *
@@ -314,6 +321,7 @@ public final class CacheControl {
     }
 
     /**
+     * 如果某些资源不需要重复向服务器请求，可以设置强制使用缓存Integer.MAX_VALUE
      * Accept cached responses that have exceeded their freshness lifetime by up to {@code
      * maxStale}. If unspecified, stale cache responses will not be used.
      *

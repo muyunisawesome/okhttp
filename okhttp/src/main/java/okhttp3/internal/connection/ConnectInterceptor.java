@@ -28,7 +28,7 @@ import okhttp3.internal.http.RealInterceptorChain;
  * 第四层拦截器。负责与服务器建立连接<P></P>
  * 在RetryAndFollowUpInterceptor里初始化了一个StreamAllocation对象，
  * 我们说在这个StreamAllocation对象里初始化了一个Socket对象用来做连接，但是并没有
- * 真正的连接，等到处理完hader和缓存信息之后，才调用ConnectInterceptor来进行真正的连接<P></P>
+ * 真正的连接，等到处理完header和缓存信息之后，才调用ConnectInterceptor来进行真正的连接<P></P>
  *
  * Opens a connection to the target server and proceeds to the next interceptor.
  */

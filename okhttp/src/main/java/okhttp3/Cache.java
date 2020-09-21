@@ -50,6 +50,8 @@ import okio.Sink;
 import okio.Source;
 
 /**
+ * 全局缓存配置<P></P>
+ *
  * Caches HTTP and HTTPS responses to the filesystem so they may be reused, saving time and
  * bandwidth.
  *
@@ -176,6 +178,10 @@ public final class Cache implements Closeable, Flushable {
   private int hitCount;
   private int requestCount;
 
+  /**
+   * @param directory 私有缓存目录
+   * @param maxSize 缓存空间大小
+   */
   public Cache(File directory, long maxSize) {
     this(directory, maxSize, FileSystem.SYSTEM);
   }
@@ -184,33 +190,43 @@ public final class Cache implements Closeable, Flushable {
     this.cache = DiskLruCache.create(fileSystem, directory, VERSION, ENTRY_COUNT, maxSize);
   }
 
+  //将url生成key
   public static String key(HttpUrl url) {
+    //获取url的utf-8格式不可变字节序列
+    //进行md5加密
+    //获取16进制形式字符串
     return ByteString.encodeUtf8(url.toString()).md5().hex();
   }
 
   @Nullable Response get(Request request) {
+    // 将请求url转化成可以使用的key
     String key = key(request.url());
+    // 定义缓存快照对象
     DiskLruCache.Snapshot snapshot;
     Entry entry;
     try {
+      // 通过DiskLruCache对象获取一个该key对象的缓存快照
       snapshot = cache.get(key);
+      // 如果快照是null，说明没有缓存响应，直接返回null
       if (snapshot == null) {
         return null;
       }
     } catch (IOException e) {
+      // 出现异常 不能读取缓存
       // Give up because the cache cannot be read.
       return null;
     }
 
     try {
+      // 创建Entry对象，将快照中的缓存信息封装到Entry对象
       entry = new Entry(snapshot.getSource(ENTRY_METADATA));
     } catch (IOException e) {
       Util.closeQuietly(snapshot);
       return null;
     }
-
+    // 将缓存中的数据构建成一个响应 见下方
     Response response = entry.response(snapshot);
-
+    // 通过比对请求和响应的相关字段，来判断是否是改请求对应的响应 见下方
     if (!entry.matches(request, response)) {
       Util.closeQuietly(response.body());
       return null;
@@ -220,35 +236,42 @@ public final class Cache implements Closeable, Flushable {
   }
 
   @Nullable CacheRequest put(Response response) {
+    // 获取网络请求方法
     String requestMethod = response.request().method();
-
+    // 验证请求方法的合法性，具体什么方法不能缓存见下方
     if (HttpMethod.invalidatesCache(response.request().method())) {
       try {
+        // 如果是这些请求方法就移除缓存
         remove(response.request());
       } catch (IOException ignored) {
         // The cache cannot be written.
       }
       return null;
     }
+    // 如果请求方法不是get请求，那就直接返回null。也就是只缓存GET请求的响应
     if (!requestMethod.equals("GET")) {
       // Don't cache non-GET responses. We're technically allowed to cache
       // HEAD requests and some POST requests, but the complexity of doing
       // so is high and the benefit is low.
       return null;
     }
-
+    // 如果响应头含有 * 字符，那也不缓存，直接返回null
     if (HttpHeaders.hasVaryAll(response)) {
       return null;
     }
-
+    // 创建Entry对象，这个对象封装了响应的一些信息，见下方
     Entry entry = new Entry(response);
+    // 创建编辑对象 这个操作类似于SharedPerference
     DiskLruCache.Editor editor = null;
     try {
+      // 通过DiskLruCache创建editor对象（需要将url转换成key，方法见下方）
       editor = cache.edit(key(response.request().url()));
       if (editor == null) {
         return null;
       }
+      // 将entry封装的部分信息写入缓存，不包括响应体，该方法见下方
       entry.writeTo(editor);
+      // 返回CacheRequestImpl对象给拦截器，用来缓存响应体
       return new CacheRequestImpl(editor);
     } catch (IOException e) {
       abortQuietly(editor);
@@ -479,16 +502,16 @@ public final class Cache implements Closeable, Flushable {
     /** Synthetic response header: the local time when the response was received. */
     private static final String RECEIVED_MILLIS = Platform.get().getPrefix() + "-Received-Millis";
 
-    private final String url;
-    private final Headers varyHeaders;
-    private final String requestMethod;
-    private final Protocol protocol;
-    private final int code;
-    private final String message;
-    private final Headers responseHeaders;
-    private final @Nullable Handshake handshake;
-    private final long sentRequestMillis;
-    private final long receivedResponseMillis;
+    private final String url; //请求url
+    private final Headers varyHeaders; //请求头
+    private final String requestMethod; //请求方法
+    private final Protocol protocol; //请求协议类型
+    private final int code; //响应码
+    private final String message; //响应消息
+    private final Headers responseHeaders; //响应头
+    private final @Nullable Handshake handshake; //TSL握手信息
+    private final long sentRequestMillis; //请求发送时间
+    private final long receivedResponseMillis; //响应获取时间
 
     /**
      * Reads an entry from an input stream. A typical entry looks like this:
@@ -605,6 +628,8 @@ public final class Cache implements Closeable, Flushable {
       this.receivedResponseMillis = response.receivedResponseAtMillis();
     }
 
+    //将Entry封装的url，请求方法，请求头；响应行（这里面包括请求协议类型，响应码，响应信息），
+    // 响应头，发送请求的时间，获取响应的时间，TLS握手信息写入到缓存
     public void writeTo(DiskLruCache.Editor editor) throws IOException {
       BufferedSink sink = Okio.buffer(editor.newSink(ENTRY_METADATA));
 
@@ -690,6 +715,7 @@ public final class Cache implements Closeable, Flushable {
       }
     }
 
+    //将Entry封装的从缓存读取的响应的数据和传递过来的Request中的数据进行对比，判断是否匹配
     public boolean matches(Request request, Response response) {
       return url.equals(request.url().toString())
           && requestMethod.equals(request.method())
@@ -704,6 +730,7 @@ public final class Cache implements Closeable, Flushable {
           .method(requestMethod, null)
           .headers(varyHeaders)
           .build();
+      //通过Entry中的信息构建响应中非响应体的数据，而响应体是通过CacheResponseBody构建，
       return new Response.Builder()
           .request(cacheRequest)
           .protocol(protocol)
@@ -731,6 +758,7 @@ public final class Cache implements Closeable, Flushable {
     }
   }
 
+  //通过缓存快照和内容类型，内容长度构成
   private static class CacheResponseBody extends ResponseBody {
     final DiskLruCache.Snapshot snapshot;
     private final BufferedSource bodySource;
@@ -744,6 +772,7 @@ public final class Cache implements Closeable, Flushable {
       this.contentLength = contentLength;
 
       Source source = snapshot.getSource(ENTRY_BODY);
+      //这里将快照中的关于响应体的数据Source 读到BufferedSource中
       bodySource = Okio.buffer(new ForwardingSource(source) {
         @Override public void close() throws IOException {
           snapshot.close();

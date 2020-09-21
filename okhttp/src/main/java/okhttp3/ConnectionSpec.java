@@ -27,6 +27,7 @@ import static okhttp3.internal.Util.intersect;
 import static okhttp3.internal.Util.nonEmptyIntersection;
 
 /**
+ * 连接规格<br>
  * Specifies configuration for the socket connection that HTTP traffic travels through. For {@code
  * https:} URLs, this includes the TLS version and cipher suites to use when negotiating a secure
  * connection.
@@ -65,6 +66,7 @@ public final class ConnectionSpec {
       CipherSuite.TLS_RSA_WITH_3DES_EDE_CBC_SHA,
   };
 
+  //可以使用SNI和ALPN等扩展的现代TLS连接
   /** A modern TLS connection with extensions like SNI and ALPN available. */
   public static final ConnectionSpec MODERN_TLS = new Builder(true)
       .cipherSuites(APPROVED_CIPHER_SUITES)
@@ -72,12 +74,14 @@ public final class ConnectionSpec {
       .supportsTlsExtensions(true)
       .build();
 
+  //用于与过时服务器操作的向后兼容回退连接
   /** A backwards-compatible fallback connection for interop with obsolete servers. */
   public static final ConnectionSpec COMPATIBLE_TLS = new Builder(MODERN_TLS)
       .tlsVersions(TlsVersion.TLS_1_0)
       .supportsTlsExtensions(true)
       .build();
 
+  //未加密，未经身份验证的Http连接
   /** Unencrypted, unauthenticated connections for {@code http:} URLs. */
   public static final ConnectionSpec CLEARTEXT = new Builder(false).build();
 
